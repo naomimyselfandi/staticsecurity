@@ -23,6 +23,7 @@ class StaticSecurityConfiguration implements SmartInitializingSingleton {
     public void afterSingletonsInstantiated() {
         for (var conversionService : conversionServices) {
             conversionService.addConverter(new ClearanceConverter(staticSecurityService));
+            conversionService.addConverter(new ClearanceReverseConverter(conversionService));
         }
     }
 

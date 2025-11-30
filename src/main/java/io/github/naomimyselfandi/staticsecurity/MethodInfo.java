@@ -16,8 +16,9 @@ import java.util.regex.Pattern;
 @UtilityClass
 public class MethodInfo {
 
+    private final Pattern RESERVED = Pattern.compile("__.*__");
     private final Pattern NORMALIZER = Pattern.compile("(?:get|is)([A-Z])(.*)");
-    private final Pattern RESERVED = Pattern.compile("__.*__|hashCode|toString");
+    private final Set<String> NOT_PROPERTIES = Set.of("hashCode", "toString", "getClass");
 
     private final Map<Method, String> NAMES = new ConcurrentHashMap<>();
     private final Map<Method, TypeDescriptor> TYPES = new ConcurrentHashMap<>();
@@ -63,6 +64,7 @@ public class MethodInfo {
     public boolean isProperty(Method method) {
         return (method.getParameterCount() == 0)
                 && (method.getReturnType() != void.class)
+                && !NOT_PROPERTIES.contains(method.getName())
                 && !RESERVED.matcher(method.getName()).matches()
                 && !method.isAnnotationPresent(Clearance.Helper.class);
     }

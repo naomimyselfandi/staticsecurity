@@ -39,6 +39,7 @@ class StaticSecurityConfigurationTest {
         when(conversionServices.iterator()).then(invocation -> List.of(conversionService).iterator());
         fixture.afterSingletonsInstantiated();
         verify(conversionService).addConverter(new ClearanceConverter(securityService));
+        verify(conversionService).addConverter(new ClearanceReverseConverter(conversionService));
     }
 
     @Test

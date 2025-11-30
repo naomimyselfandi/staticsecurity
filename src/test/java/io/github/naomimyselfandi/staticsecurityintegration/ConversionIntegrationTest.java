@@ -1,6 +1,8 @@
 package io.github.naomimyselfandi.staticsecurityintegration;
 
 import io.github.naomimyselfandi.staticsecurity.AccessPolicy;
+import io.github.naomimyselfandi.staticsecurity.StaticSecurityService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,11 +18,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(classes = TestConfiguration.class)
 class ConversionIntegrationTest {
+
+    @Autowired
+    private StaticSecurityService staticSecurityService;
 
     @Autowired
     private ConversionService conversionService;
@@ -29,6 +35,11 @@ class ConversionIntegrationTest {
     private AccessPolicy<DocumentRequest> accessPolicy;
 
     private enum SourceType {DTO, STRING, UUID}
+
+    @BeforeEach
+    void setup() {
+        lenient().when(accessPolicy.check(any())).thenReturn(null);
+    }
 
     @EnumSource
     @ParameterizedTest
@@ -39,7 +50,6 @@ class ConversionIntegrationTest {
             case STRING -> id.toString();
             case UUID -> id;
         };
-        when(accessPolicy.check(any())).thenReturn(null);
         assertThat(conversionService.convert(source, DocumentRequest.class)).returns(id, DocumentRequest::getId);
     }
 
@@ -48,7 +58,6 @@ class ConversionIntegrationTest {
         var id = UUID.randomUUID();
         var contents = UUID.randomUUID().toString();
         var source = new DocumentUpdateRequestDto(id.toString(), contents);
-        when(accessPolicy.check(any())).thenReturn(null);
         assertThat(conversionService.convert(source, DocumentUpdateRequest.class))
                 .returns(id, DocumentRequest::getId)
                 .returns(contents, DocumentUpdateRequest::getContents)
@@ -78,6 +87,22 @@ class ConversionIntegrationTest {
         var e = new RuntimeException();
         when(accessPolicy.check(any())).thenReturn(() -> e);
         assertThatThrownBy(() -> conversionService.convert(source, DocumentUpdateRequest.class)).hasCause(e);
+    }
+
+    @Test
+    void canConvertBack() {
+        var id = UUID.randomUUID();
+        var clearance = staticSecurityService.create(id, DocumentRequest.class).require();
+        assertThat(conversionService.convert(clearance, UUID.class)).isEqualTo(id);
+        assertThat(conversionService.convert(clearance, String.class)).isEqualTo(id.toString());
+    }
+
+    @Test
+    void reverseConversionOnlyAppliesToSimpleClearances() {
+        assertThat(conversionService.canConvert(DocumentRequest.class, UUID.class)).isTrue();
+        assertThat(conversionService.canConvert(DocumentRequest.class, String.class)).isTrue();
+        assertThat(conversionService.canConvert(DocumentUpdateRequest.class, UUID.class)).isFalse();
+        assertThat(conversionService.canConvert(DocumentUpdateRequest.class, String.class)).isFalse();
     }
 
 }
