@@ -1,15 +1,11 @@
 package io.github.naomimyselfandi.staticsecurity;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.ImportSelector;
 import org.springframework.core.type.AnnotationMetadata;
 
 import java.util.ArrayList;
 
-@RequiredArgsConstructor(staticName = "forTesting")
-class StaticSecurity implements ImportSelector {
-
-    private final ClassLoader classLoader;
+record StaticSecurity(ClassLoader classLoader) implements ImportSelector {
 
     StaticSecurity() {
         this(StaticSecurity.class.getClassLoader());
@@ -22,7 +18,10 @@ class StaticSecurity implements ImportSelector {
         try {
             classLoader.loadClass("com.fasterxml.jackson.databind.ObjectMapper");
             result.add("io.github.naomimyselfandi.staticsecurity.jackson.StaticSecurityJacksonConfiguration");
-        } catch (ClassNotFoundException ignored) {}
+            classLoader.loadClass("org.springframework.web.method.support.HandlerMethodArgumentResolver");
+            result.add("io.github.naomimyselfandi.staticsecurity.web.StaticSecurityWebConfiguration");
+        } catch (ClassNotFoundException ignored) {
+        }
         return result.toArray(String[]::new);
     }
 

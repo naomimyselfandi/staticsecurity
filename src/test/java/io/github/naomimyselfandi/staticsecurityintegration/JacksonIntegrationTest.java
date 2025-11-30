@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import java.util.OptionalInt;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,7 +52,7 @@ class JacksonIntegrationTest {
         assertThat(objectMapper.convertValue(source, DocumentUpdateRequest.class))
                 .returns(id, DocumentRequest::getId)
                 .returns(contents, DocumentUpdateRequest::getContents)
-                .returns(OptionalInt.empty(), DocumentUpdateRequest::getChapter)
+                .returns(Optional.empty(), DocumentUpdateRequest::getChapter)
                 .returns(true, DocumentUpdateRequest::createsNewChapter);
     }
 

@@ -1,12 +1,12 @@
 package io.github.naomimyselfandi.staticsecurityintegration;
 
-import java.util.OptionalInt;
+import java.util.Optional;
 
 public interface DocumentUpdateRequest extends DocumentRequest {
 
     String getContents();
 
-    OptionalInt getChapter();
+    Optional<Integer> getChapter();
 
     default boolean createsNewChapter() {
         return getChapter().isEmpty();

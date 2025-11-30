@@ -9,6 +9,9 @@ import java.lang.annotation.Target;
  * Unwrap the annotated method's return value during property extraction. While
  * extracting a property value from an object with unwrapped methods, the value
  * may also be extracted from those methods' return values.
+ *
+ * @see io.github.naomimyselfandi.staticsecurity.web.MergedClearance Unwrapping
+ * is often used in web applications for merged clearance request bodies.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
