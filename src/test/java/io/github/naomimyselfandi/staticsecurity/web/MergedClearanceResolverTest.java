@@ -3,21 +3,28 @@ package io.github.naomimyselfandi.staticsecurity.web;
 import io.github.naomimyselfandi.staticsecurity.Clearance;
 import io.github.naomimyselfandi.staticsecurity.PendingClearance;
 import io.github.naomimyselfandi.staticsecurity.StaticSecurityService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.RepetitionInfo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.convert.ConversionService;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
+import org.springframework.web.method.support.UriComponentsContributor;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.*;
@@ -52,22 +59,47 @@ class MergedClearanceResolverTest {
     private WebDataBinderFactory binderFactory;
 
     @Mock
-    private HandlerMethodArgumentResolver delegate;
+    private UriComponentsBuilder uriBuilder;
+
+    @Mock
+    private ConversionService conversionService;
+
+    @Mock
+    private HandlerMethodArgumentResolver resolver;
+
+    @Mock
+    private UriComponentsContributor contributor;
 
     @Mock
     private StaticSecurityService staticSecurityService;
 
     @Mock
-    private Supplier<HandlerMethodArgumentResolver> delegateSupplier;
+    private Supplier<HandlerMethodArgumentResolver> resolverSupplier;
 
-    @InjectMocks
+    @Mock
+    private Supplier<UriComponentsContributor> contributorSupplier;
+
     private MergedClearanceResolver fixture;
+
+    @BeforeEach
+    void setup() {
+        fixture = new MergedClearanceResolver(staticSecurityService, resolverSupplier, contributorSupplier);
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void supportsParameter(boolean annotated) {
-        when(parameter.hasParameterAnnotation(MergedClearance.class)).thenReturn(annotated);
-        assertThat(fixture.supportsParameter(parameter)).isEqualTo(annotated);
+    void supportsParameter(boolean canCreate) {
+        when(parameter.getParameterAnnotation(MergedClearance.class)).thenReturn(mergedClearance);
+        doReturn(TestClearance.class).when(parameter).getParameterType();
+        doReturn(Helper.class).when(mergedClearance).value();
+        when(staticSecurityService.canCreate(Helper.class, TestClearance.class)).thenReturn(canCreate);
+        assertThat(fixture.supportsParameter(parameter)).isEqualTo(canCreate);
+    }
+
+    @Test
+    void supportsParameter_WhenTheParameterIsNotAnnotated_ThenFalse() {
+        when(parameter.getParameterAnnotation(MergedClearance.class)).thenReturn(null);
+        assertThat(fixture.supportsParameter(parameter)).isFalse();
     }
 
     @Test
@@ -77,15 +109,15 @@ class MergedClearanceResolverTest {
         var barParam = new MethodParameter(constructor, 1);
         var foo = new Object();
         var bar = new Object();
-        when(delegateSupplier.get()).thenReturn(delegate);
-        when(delegate.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).then(i -> {
+        when(resolverSupplier.get()).thenReturn(resolver);
+        when(resolver.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).then(i -> {
             var parameter = i.<MethodParameter>getArgument(0);
             assertThat(parameter.getParameterName()).isEqualTo("foo");
             assertThat(parameter.getExecutable()).isEqualTo(constructor);
             assertThat(parameter.getParameterIndex()).isZero();
             return foo;
         });
-        when(delegate.resolveArgument(barParam, mavContainer, webRequest, binderFactory)).then(i -> {
+        when(resolver.resolveArgument(barParam, mavContainer, webRequest, binderFactory)).then(i -> {
             var parameter = i.<MethodParameter>getArgument(0);
             assertThat(parameter.getParameterName()).isEqualTo("bar");
             assertThat(parameter.getExecutable()).isEqualTo(constructor);
@@ -107,12 +139,12 @@ class MergedClearanceResolverTest {
         var constructor = Helper.class.getDeclaredConstructors()[0];
         var fooParam = new MethodParameter(constructor, 0);
         var barParam = new MethodParameter(constructor, 1);
-        when(delegateSupplier.get()).thenReturn(delegate);
+        when(resolverSupplier.get()).thenReturn(resolver);
         if (i == 0) {
-            when(delegate.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).thenThrow(e);
+            when(resolver.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).thenThrow(e);
         } else {
-            when(delegate.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).thenReturn(new Object());
-            when(delegate.resolveArgument(barParam, mavContainer, webRequest, binderFactory)).thenThrow(e);
+            when(resolver.resolveArgument(fooParam, mavContainer, webRequest, binderFactory)).thenReturn(new Object());
+            when(resolver.resolveArgument(barParam, mavContainer, webRequest, binderFactory)).thenThrow(e);
         }
         when(parameter.getParameterAnnotation(MergedClearance.class)).thenReturn(mergedClearance);
         doReturn(Helper.class).when(mergedClearance).value();
@@ -120,6 +152,41 @@ class MergedClearanceResolverTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Failed resolving parameter %d for %s.", i, Helper.class.getName())
                 .hasCause(e);
+    }
+
+    @ParameterizedTest
+    @CsvSource(textBlock = """
+            true,true
+            true,false
+            false,true
+            false,false
+            """)
+    void contributeMethodArgument(boolean fooIsSet, boolean barIsSet) {
+        var constructor = Helper.class.getDeclaredConstructors()[0];
+        var fooParam = new MethodParameter(constructor, 0);
+        var barParam = new MethodParameter(constructor, 1);
+        var foo = fooIsSet ? new Object() : null;
+        var bar = barIsSet ? new Object() : null;
+        var data = new HashMap<String, Object>();
+        if (fooIsSet) {
+            data.put("foo", foo);
+        }
+        if (barIsSet) {
+            data.put("bar", bar);
+        }
+        when(clearance.__data__()).thenReturn(data);
+        var uriVariables = Map.of(UUID.randomUUID().toString(), new Object());
+        when(contributorSupplier.get()).thenReturn(contributor);
+        when(parameter.getParameterAnnotation(MergedClearance.class)).thenReturn(mergedClearance);
+        doReturn(Helper.class).when(mergedClearance).value();
+        fixture.contributeMethodArgument(parameter, clearance, uriBuilder, uriVariables, conversionService);
+        if (fooIsSet) {
+            verify(contributor).contributeMethodArgument(fooParam, foo, uriBuilder, uriVariables, conversionService);
+        }
+        if (barIsSet) {
+            verify(contributor).contributeMethodArgument(barParam, bar, uriBuilder, uriVariables, conversionService);
+        }
+        verifyNoMoreInteractions(contributor);
     }
 
 }
