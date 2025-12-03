@@ -1,6 +1,8 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.PropertyProvider;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -9,8 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.ConversionService;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -24,6 +25,12 @@ class PropertyProviderCacheTest {
     private static class SubImpl extends FooImpl {}
     private static class BarImpl extends SubImpl implements Bar {}
     private interface SomethingElse {}
+
+    @Mock
+    private Cache<Class<?>, List<Property>> propertyCache;
+
+    @Mock
+    private Property property;
 
     @Mock
     private PropertyProvider<Foo> foo;
@@ -59,7 +66,7 @@ class PropertyProviderCacheTest {
         extractors.add(subImpl);
         extractors.add(barImpl);
         Collections.shuffle(extractors);
-        fixture = new PropertyProviderCache(extractors, conversionService);
+        fixture = new PropertyProviderCache(propertyCache, extractors, conversionService);
     }
 
     @RepeatedTest(5)
@@ -73,9 +80,14 @@ class PropertyProviderCacheTest {
 
     @Test
     void calculate_WhenNoExtractorIsConfigured_ThenUsesAReflectiveExtractor() {
+        when(property.name()).thenReturn(UUID.randomUUID().toString());
+        when(propertyCache.calculate(SomethingElse.class)).thenReturn(List.of(property));
         assertThat(fixture.calculate(SomethingElse.class))
-                .isInstanceOf(ReflectivePropertyProvider.class)
-                .returns(SomethingElse.class, PropertyProvider::getSourceType);
+                .asInstanceOf(InstanceOfAssertFactories.type(ReflectivePropertyProvider.class))
+                .returns(SomethingElse.class, PropertyProvider::getSourceType)
+                .returns(Map.of(property.name(), property), it -> it.properties)
+                .returns(conversionService, it -> it.conversionService)
+                .returns(fixture, it -> it.propertyProviderCache);
     }
 
 }

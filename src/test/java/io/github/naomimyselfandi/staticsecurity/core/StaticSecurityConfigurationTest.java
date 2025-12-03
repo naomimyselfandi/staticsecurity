@@ -1,5 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.StaticSecurityService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +30,9 @@ class StaticSecurityConfigurationTest {
     private ConfigurableConversionService conversionService;
 
     @Mock
+    private Cache<Class<?>, List<Property>> propertyCache;
+
+    @Mock
     private ObjectProvider<ConfigurableConversionService> conversionServices;
 
     @InjectMocks
@@ -39,7 +43,7 @@ class StaticSecurityConfigurationTest {
         when(conversionServices.iterator()).then(invocation -> List.of(conversionService).iterator());
         fixture.afterSingletonsInstantiated();
         verify(conversionService).addConverter(new ClearanceConverter(securityService));
-        verify(conversionService).addConverter(new ClearanceReverseConverter(conversionService));
+        verify(conversionService).addConverter(new ClearanceReverseConverter(propertyCache, conversionService));
     }
 
     @Test

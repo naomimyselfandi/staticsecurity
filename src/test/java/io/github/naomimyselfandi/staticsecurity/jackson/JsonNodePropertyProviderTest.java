@@ -3,6 +3,7 @@ package io.github.naomimyselfandi.staticsecurity.jackson;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 import com.fasterxml.jackson.databind.type.TypeFactory;
+import io.github.naomimyselfandi.staticsecurity.Property;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.*;
 import org.springframework.core.convert.*;
 
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
@@ -48,7 +48,8 @@ class JsonNodePropertyProviderTest {
     private static final TypeDescriptor DOUBLE = TypeDescriptor.valueOf(Double.class);
     private static final TypeDescriptor SOMETHING = TypeDescriptor.valueOf(Something.class);
 
-    private Method method, listMethod;
+    @Mock
+    private Property property;
 
     @Mock
     private Something something;
@@ -63,12 +64,8 @@ class JsonNodePropertyProviderTest {
 
     @BeforeEach
     void setup() throws NoSuchMethodException {
-        interface Holder {
-            Something getSomething();
-            List<Something> getThings();
-        }
-        method = Holder.class.getMethod("getSomething");
-        listMethod = Holder.class.getMethod("getThings");
+        lenient().when(property.name()).thenReturn(UUID.randomUUID().toString());
+        lenient().when(property.type()).thenReturn(SOMETHING);
         lenient().when(objectMapper.getTypeFactory()).thenReturn(TypeFactory.defaultInstance());
         var objectMapperProvider = new ObjectProvider<ObjectMapper>() {
             @Override
@@ -84,30 +81,32 @@ class JsonNodePropertyProviderTest {
     @MethodSource("nodes")
     void extract(JsonNode node) {
         when(objectMapper.convertValue(node, Something.JAVA_TYPE)).thenReturn(something);
-        var source = new ObjectNode(JsonNodeFactory.instance, Map.of("something", node));
-        assertThat(fixture.extract(source, method)).isEqualTo(something);
+        var source = new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), node));
+        assertThat(fixture.extract(source, property)).isEqualTo(something);
     }
 
     @ParameterizedTest
     @MethodSource("nodes")
     void flatten(JsonNode node) {
         when(objectMapper.convertValue(node, Something.JAVA_TYPE)).thenReturn(something);
-        assertThat(fixture.flatten(node, method)).isEqualTo(something);
+        assertThat(fixture.flatten(node, property)).isEqualTo(something);
     }
 
     @ParameterizedTest
     @MethodSource("nodes")
     void extract_GenericType(JsonNode node) {
+        when(property.type()).thenReturn(TypeDescriptor.collection(List.class, SOMETHING));
         when(objectMapper.convertValue(node, Something.LIST_TYPE)).thenReturn(List.of(something));
-        var source = new ObjectNode(JsonNodeFactory.instance, Map.of("things", node));
-        assertThat(fixture.extract(source, listMethod)).isEqualTo(List.of(something));
+        var source = new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), node));
+        assertThat(fixture.extract(source, property)).isEqualTo(List.of(something));
     }
 
     @ParameterizedTest
     @MethodSource("nodes")
     void flatten_GenericType(JsonNode node) {
+        when(property.type()).thenReturn(TypeDescriptor.collection(List.class, SOMETHING));
         when(objectMapper.convertValue(node, Something.LIST_TYPE)).thenReturn(List.of(something));
-        assertThat(fixture.flatten(node, listMethod)).isEqualTo(List.of(something));
+        assertThat(fixture.flatten(node, property)).isEqualTo(List.of(something));
     }
 
     @ParameterizedTest
@@ -117,8 +116,8 @@ class JsonNodePropertyProviderTest {
             var realObjectMapper = new ObjectMapper();
             return realObjectMapper.convertValue(node, Something.JAVA_TYPE); // will throw
         });
-        var source = new ObjectNode(JsonNodeFactory.instance, Map.of("something", node));
-        assertThat(fixture.extract(source, method)).isNull();
+        var source = new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), node));
+        assertThat(fixture.extract(source, property)).isNull();
     }
 
     @ParameterizedTest
@@ -128,34 +127,34 @@ class JsonNodePropertyProviderTest {
             var realObjectMapper = new ObjectMapper();
             return realObjectMapper.convertValue(node, Something.JAVA_TYPE); // will throw
         });
-        assertThat(fixture.flatten(node, method)).isNull();
+        assertThat(fixture.flatten(node, property)).isNull();
     }
 
     @Test
     void extract_WhenTheKeyDoesNotExist_ThenNull() {
-        assertThat(fixture.extract(new ObjectNode(JsonNodeFactory.instance), method)).isNull();
+        assertThat(fixture.extract(new ObjectNode(JsonNodeFactory.instance), property)).isNull();
     }
 
     @Test
     void extract_WhenTheKeyIsNull_ThenNull() {
-        var source = new ObjectNode(JsonNodeFactory.instance, Map.of("something", NullNode.getInstance()));
-        assertThat(fixture.extract(source, method)).isNull();
+        var source = new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), NullNode.getInstance()));
+        assertThat(fixture.extract(source, property)).isNull();
     }
 
     @Test
     void extract_WhenTheKeyIsMissing_ThenNull() {
-        var source = new ObjectNode(JsonNodeFactory.instance, Map.of("something", MissingNode.getInstance()));
-        assertThat(fixture.extract(source, method)).isNull();
+        var source = new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), MissingNode.getInstance()));
+        assertThat(fixture.extract(source, property)).isNull();
     }
 
     @Test
     void flatten_WhenTheSourceIsNull_ThenNull() {
-        assertThat(fixture.extract(NullNode.getInstance(), method)).isNull();
+        assertThat(fixture.extract(NullNode.getInstance(), property)).isNull();
     }
 
     @Test
     void flatten_WhenTheSourceIsMissing_ThenNull() {
-        assertThat(fixture.extract(MissingNode.getInstance(), method)).isNull();
+        assertThat(fixture.extract(MissingNode.getInstance(), property)).isNull();
     }
 
     @Test
@@ -163,7 +162,7 @@ class JsonNodePropertyProviderTest {
         var value = UUID.randomUUID().toString();
         when(conversionService.canConvert(STRING, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new TextNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new TextNode(value)), property)).isEqualTo(something);
     }
 
     @ParameterizedTest
@@ -171,7 +170,7 @@ class JsonNodePropertyProviderTest {
     void extract_WhenTheSourceIsABooleanNode_ThenTriesTheConversionService(boolean value) {
         when(conversionService.canConvert(BOOLEAN, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(BooleanNode.valueOf(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(BooleanNode.valueOf(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -179,7 +178,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextInt();
         when(conversionService.canConvert(INTEGER, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new IntNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new IntNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -187,7 +186,7 @@ class JsonNodePropertyProviderTest {
         var value = (short) ThreadLocalRandom.current().nextInt();
         when(conversionService.canConvert(SHORT, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new ShortNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new ShortNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -195,7 +194,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextLong();
         when(conversionService.canConvert(LONG, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new LongNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new LongNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -203,7 +202,7 @@ class JsonNodePropertyProviderTest {
         var value = BigInteger.valueOf(ThreadLocalRandom.current().nextLong());
         when(conversionService.canConvert(BIG_INTEGER, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new BigIntegerNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new BigIntegerNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -211,7 +210,7 @@ class JsonNodePropertyProviderTest {
         var value = BigDecimal.valueOf(ThreadLocalRandom.current().nextDouble());
         when(conversionService.canConvert(BIG_DECIMAL, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new DecimalNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new DecimalNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -219,7 +218,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextDouble();
         when(conversionService.canConvert(DOUBLE, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new DoubleNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new DoubleNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -227,7 +226,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextFloat();
         when(conversionService.canConvert(DOUBLE, SOMETHING)).thenReturn(true);
         when(conversionService.convert((double) value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new FloatNode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new FloatNode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -235,7 +234,7 @@ class JsonNodePropertyProviderTest {
         var value = new Object() {};
         when(conversionService.canConvert(TypeDescriptor.forObject(value), SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.extract(wrap(new POJONode(value)), method)).isEqualTo(something);
+        assertThat(fixture.extract(wrap(new POJONode(value)), property)).isEqualTo(something);
     }
 
     @Test
@@ -243,7 +242,7 @@ class JsonNodePropertyProviderTest {
         var value = UUID.randomUUID().toString();
         when(conversionService.canConvert(STRING, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new TextNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new TextNode(value), property)).isEqualTo(something);
     }
 
     @ParameterizedTest
@@ -251,7 +250,7 @@ class JsonNodePropertyProviderTest {
     void flatten_WhenTheSourceIsABooleanNode_ThenTriesTheConversionService(boolean value) {
         when(conversionService.canConvert(BOOLEAN, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(BooleanNode.valueOf(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(BooleanNode.valueOf(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -259,7 +258,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextInt();
         when(conversionService.canConvert(INTEGER, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new IntNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new IntNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -267,7 +266,7 @@ class JsonNodePropertyProviderTest {
         var value = (short) ThreadLocalRandom.current().nextInt();
         when(conversionService.canConvert(SHORT, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new ShortNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new ShortNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -275,7 +274,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextLong();
         when(conversionService.canConvert(LONG, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new LongNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new LongNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -283,7 +282,7 @@ class JsonNodePropertyProviderTest {
         var value = BigInteger.valueOf(ThreadLocalRandom.current().nextLong());
         when(conversionService.canConvert(BIG_INTEGER, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new BigIntegerNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new BigIntegerNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -291,7 +290,7 @@ class JsonNodePropertyProviderTest {
         var value = BigDecimal.valueOf(ThreadLocalRandom.current().nextDouble());
         when(conversionService.canConvert(BIG_DECIMAL, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new DecimalNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new DecimalNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -299,7 +298,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextDouble();
         when(conversionService.canConvert(DOUBLE, SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new DoubleNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new DoubleNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -307,7 +306,7 @@ class JsonNodePropertyProviderTest {
         var value = ThreadLocalRandom.current().nextFloat();
         when(conversionService.canConvert(DOUBLE, SOMETHING)).thenReturn(true);
         when(conversionService.convert((double) value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new FloatNode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new FloatNode(value), property)).isEqualTo(something);
     }
 
     @Test
@@ -315,7 +314,7 @@ class JsonNodePropertyProviderTest {
         var value = new Object() {};
         when(conversionService.canConvert(TypeDescriptor.forObject(value), SOMETHING)).thenReturn(true);
         when(conversionService.convert(value, SOMETHING)).thenReturn(something);
-        assertThat(fixture.flatten(new POJONode(value), method)).isEqualTo(something);
+        assertThat(fixture.flatten(new POJONode(value), property)).isEqualTo(something);
     }
 
     private static Stream<JsonNode> nodes() {
@@ -336,8 +335,8 @@ class JsonNodePropertyProviderTest {
         );
     }
 
-    private static JsonNode wrap(JsonNode node) {
-        return new ObjectNode(JsonNodeFactory.instance, Map.of("something", node));
+    private JsonNode wrap(JsonNode node) {
+        return new ObjectNode(JsonNodeFactory.instance, Map.of(property.name(), node));
     }
 
 }

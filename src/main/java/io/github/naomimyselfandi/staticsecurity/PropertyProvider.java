@@ -3,8 +3,6 @@ package io.github.naomimyselfandi.staticsecurity;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.core.ResolvableType;
 
-import java.lang.reflect.Method;
-
 /**
  * A strategy for providing property values. Typically, a clearance type's
  * property values are obtained reflectively, but for some objects, such as maps
@@ -20,17 +18,15 @@ public interface PropertyProvider<S> {
     /**
      * Extract a value for some property.
      *
-     * @implSpec Implementations should use {@link MethodInfo#getName(Method)}
-     * to determine property's name, since it may be different from the method
-     * name. The returned value should be an instance of the method's return
-     * type, or {@code null} if a value is not available or cannot be converted
-     * to the appropriate type.
+     * @implSpec The returned value must be an instance of the property's type,
+     * or {@code null} if a value is not available or cannot be converted to the
+     * appropriate type.
      *
      * @param source The source object to extract from.
      * @param property The property for which a value is being extracted.
      * @return An instance of the property's type or {@code null}.
      */
-    @Nullable Object extract(S source, Method property);
+    @Nullable Object extract(S source, Property property);
 
     /**
      * Flatten a source object into some property's type.
@@ -38,14 +34,14 @@ public interface PropertyProvider<S> {
      * @implSpec Implementations should <em>not</em> consider the property's
      * name. Instead, they should attempt to represent the entire source object
      * as the property's type in some way. The returned value should be an
-     * instance of the method's return type, or {@code null} if a value is
-     * not available or cannot be converted to the appropriate type.
+     * instance of the property's type, or {@code null} if a value is not
+     * available or cannot be converted to the appropriate type.
      *
      * @param source The source object to flatten.
      * @param property The property for which it is being flattened.
      * @return An instance of the property's type or {@code null}.
      */
-    @Nullable Object flatten(S source, Method property);
+    @Nullable Object flatten(S source, Property property);
 
     /**
      * Check if this provider can extract a property value from a source object.
@@ -59,7 +55,7 @@ public interface PropertyProvider<S> {
      * @return {@code false} if this provider definitely cannot extract a value
      * matching the property's name and type; {@code true} otherwise.
      */
-    default boolean canExtract(Method property) {
+    default boolean canExtract(Property property) {
         return true;
     }
 
@@ -75,7 +71,7 @@ public interface PropertyProvider<S> {
      * @return {@code false} if this provider definitely cannot flatten a source
      * object into the property's type; {@code true} otherwise.
      */
-    default boolean canFlatten(Method property) {
+    default boolean canFlatten(Property property) {
         return true;
     }
 

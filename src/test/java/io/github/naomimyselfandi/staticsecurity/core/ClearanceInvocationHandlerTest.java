@@ -25,7 +25,7 @@ class ClearanceInvocationHandlerTest {
     @Mock
     private SomeBean someBean;
 
-    private interface TestRequest extends Clearance {
+    private interface TestClearance extends Clearance {
 
         Object getRequired();
 
@@ -61,6 +61,12 @@ class ClearanceInvocationHandlerTest {
         @Helper(Helper.Type.SPRING)
         SomeBean someBean();
 
+        void notHelper();
+
+        void __auth__(Object parameter);
+
+        void __data__(Object parameter);
+
     }
 
     @Mock
@@ -81,30 +87,42 @@ class ClearanceInvocationHandlerTest {
         data.put("required", required);
         data.put("optional", optional);
         var loader = getClass().getClassLoader();
-        var interfaces = new Class<?>[]{TestRequest.class};
-        var handler = new ClearanceInvocationHandler(TestRequest.class, auth, data, beans);
-        var request = (TestRequest) Proxy.newProxyInstance(loader, interfaces, handler);
-        assertThat(request)
-                .isEqualTo(request)
-                .isNotEqualTo(mock(TestRequest.class))
+        var interfaces = new Class<?>[]{TestClearance.class};
+        var handler = new ClearanceInvocationHandler(TestClearance.class, auth, data, beans);
+        var clearance = (TestClearance) Proxy.newProxyInstance(loader, interfaces, handler);
+        assertThat(clearance)
+                .isEqualTo(clearance)
+                .isNotEqualTo(mock(TestClearance.class))
                 .isNotEqualTo(null)
-                .returns(System.identityHashCode(request), TestRequest::hashCode)
-                .hasToString("TestRequest(optional=%s, required=%s)", optional, required)
-                .returns(required, TestRequest::getRequired)
-                .returns(optional, TestRequest::getOptional)
-                .returns(Optional.empty(), TestRequest::getOmitted)
-                .returns(OptionalInt.empty(), TestRequest::getOmittedInt)
-                .returns(OptionalLong.empty(), TestRequest::getOmittedLong)
-                .returns(OptionalDouble.empty(), TestRequest::getOmittedDouble)
-                .returns(DEFAULT, TestRequest::getDefault)
-                .returns(data, TestRequest::__data__)
-                .returns(auth, TestRequest::__auth__)
-                .returns(someBean, TestRequest::someBean);
-        assertThat(request.uuid()).isNotNull().isEqualTo(request.uuid());
-        assertThat(request.uuidThatChangesEachTime()).isNotNull().isNotEqualTo(request.uuidThatChangesEachTime());
-        assertThat(request.string(1)).isNotNull().startsWith("1_").isEqualTo(request.string(1));
-        assertThat(request.string(2)).isNotNull().startsWith("2_").isEqualTo(request.string(2));
-        assertThat(request.string(1)).isNotEqualTo(request.string(2));
+                .returns(System.identityHashCode(clearance), TestClearance::hashCode)
+                .hasToString("TestClearance(optional=%s, required=%s)", optional, required)
+                .returns(required, TestClearance::getRequired)
+                .returns(optional, TestClearance::getOptional)
+                .returns(Optional.empty(), TestClearance::getOmitted)
+                .returns(OptionalInt.empty(), TestClearance::getOmittedInt)
+                .returns(OptionalLong.empty(), TestClearance::getOmittedLong)
+                .returns(OptionalDouble.empty(), TestClearance::getOmittedDouble)
+                .returns(DEFAULT, TestClearance::getDefault)
+                .returns(data, TestClearance::__data__)
+                .returns(auth, TestClearance::__auth__)
+                .returns(someBean, TestClearance::someBean);
+        assertThatThrownBy(clearance::notHelper)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Unsupported method")
+                .hasMessageContaining("notHelper");
+        assertThatThrownBy(() -> clearance.__auth__(new Object()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Unsupported method")
+                .hasMessageContaining("__auth__");
+        assertThatThrownBy(() -> clearance.__data__(new Object()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Unsupported method")
+                .hasMessageContaining("__data__");
+        assertThat(clearance.uuid()).isNotNull().isEqualTo(clearance.uuid());
+        assertThat(clearance.uuidThatChangesEachTime()).isNotNull().isNotEqualTo(clearance.uuidThatChangesEachTime());
+        assertThat(clearance.string(1)).isNotNull().startsWith("1_").isEqualTo(clearance.string(1));
+        assertThat(clearance.string(2)).isNotNull().startsWith("2_").isEqualTo(clearance.string(2));
+        assertThat(clearance.string(1)).isNotEqualTo(clearance.string(2));
     }
 
 }

@@ -1,7 +1,5 @@
 package io.github.naomimyselfandi.staticsecurity;
 
-import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
@@ -12,28 +10,33 @@ import java.lang.reflect.Method;
  * An abstract property provider implementation. This class implements source
  * object flattening by delegating to Spring's conversion service, which is
  * appropriate for most providers, and provides a partial implementation of
- * {@link #extract(Object, Method)} which converts extracted values.
+ * {@link #extract(Object, Property)} which converts extracted values.
  *
  * @param <S> The type of source object which this provider handles.
  */
-@RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public abstract class AbstractProvider<S> implements PropertyProvider<S> {
 
     protected final ConversionService conversionService;
+    private final TypeDescriptor sourceType;
 
-    @Override
-    public @Nullable Object flatten(S source, Method property) {
-        return conversionService.convert(source, MethodInfo.getType(property));
+    protected AbstractProvider(ConversionService conversionService) {
+        this.conversionService = conversionService;
+        this.sourceType = TypeDescriptor.valueOf(getSourceType());
     }
 
     @Override
-    public @Nullable Object extract(S source, Method property) {
+    public @Nullable Object flatten(S source, Property property) {
+        return conversionService.convert(source, property.type());
+    }
+
+    @Override
+    public @Nullable Object extract(S source, Property property) {
         var value = extractImpl(source, property);
         if (value == null) {
             return null;
         }
         var valueType = TypeDescriptor.forObject(value);
-        var propertyType = MethodInfo.getType(property);
+        var propertyType = property.type();
         if (conversionService.canConvert(valueType, propertyType)) {
             return conversionService.convert(value, propertyType);
         } else {
@@ -42,16 +45,14 @@ public abstract class AbstractProvider<S> implements PropertyProvider<S> {
     }
 
     @Override
-    public boolean canFlatten(Method property) {
-        return conversionService.canConvert(TypeDescriptor.valueOf(getSourceType()), MethodInfo.getType(property));
+    public boolean canFlatten(Property property) {
+        return conversionService.canConvert(sourceType, property.type());
     }
 
     /**
      * Extract a value for some property.
      *
-     * @implSpec Implementations should use {@link MethodInfo#getName(Method)}
-     * to determine property's name, since it may be different from the method
-     * name. Implementations are not responsible for checking the property's
+     * @implNote Implementations are not responsible for checking the property's
      * type unless they can provide conversions beyond those offered by Spring's
      * conversion service.
      *
@@ -59,6 +60,6 @@ public abstract class AbstractProvider<S> implements PropertyProvider<S> {
      * @param property The property for which a value is being extracted.
      * @return The extracted object (of any type) or {@code null}.
      */
-    protected abstract @Nullable Object extractImpl(S source, Method property);
+    protected abstract @Nullable Object extractImpl(S source, Property property);
 
 }

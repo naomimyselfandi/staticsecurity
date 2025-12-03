@@ -12,8 +12,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
 
-import java.lang.reflect.Method;
-
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -30,7 +28,8 @@ class AbstractProviderTest {
 
     private interface Extracted {}
 
-    private Method property;
+    @Mock
+    private Property property;
 
     @Mock
     private Source source;
@@ -46,15 +45,12 @@ class AbstractProviderTest {
     private AbstractProvider<Source> fixture;
 
     @BeforeEach
-    void setup() throws NoSuchMethodException {
-        interface Holder {
-            Target method();
-        }
-        property = Holder.class.getMethod("method");
+    void setup() {
+        lenient().when(property.type()).thenReturn(TypeDescriptor.valueOf(Target.class));
         fixture = new AbstractProvider<>(conversionService) {
 
             @Override
-            protected @Nullable Object extractImpl(@NotNull Source source, @NotNull Method property) {
+            protected @Nullable Object extractImpl(@NotNull Source source, @NotNull Property property) {
                 assertThat(source).isEqualTo(AbstractProviderTest.this.source);
                 assertThat(property).isEqualTo(AbstractProviderTest.this.property);
                 return extracted;

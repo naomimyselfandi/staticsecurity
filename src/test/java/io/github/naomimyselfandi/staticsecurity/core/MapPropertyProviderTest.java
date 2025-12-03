@@ -1,5 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -8,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.ConversionService;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -16,19 +18,20 @@ import static org.mockito.Mockito.*;
 class MapPropertyProviderTest {
 
     @Mock
+    private Property property;
+
+    @Mock
     private ConversionService conversionService;
 
     @InjectMocks
     private MapPropertyProvider fixture;
 
     @Test
-    void extractImpl() throws NoSuchMethodException {
-        interface Holder {
-            Object getSomething();
-        }
+    void extractImpl() {
+        var name = UUID.randomUUID().toString();
         var value = new Object();
-        var property = Holder.class.getMethod("getSomething");
-        assertThat(fixture.extractImpl(Map.of("something", value), property)).isEqualTo(value);
+        when(property.name()).thenReturn(name);
+        assertThat(fixture.extractImpl(Map.of(name, value), property)).isEqualTo(value);
         verifyNoInteractions(conversionService);
     }
 

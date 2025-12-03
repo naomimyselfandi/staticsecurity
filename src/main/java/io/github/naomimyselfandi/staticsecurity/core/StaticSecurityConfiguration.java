@@ -1,5 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.StaticSecurityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -11,19 +12,22 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.ConfigurableConversionService;
 
+import java.util.List;
+
 @Configuration
 @ComponentScan
 @RequiredArgsConstructor
 class StaticSecurityConfiguration implements SmartInitializingSingleton {
 
     private final StaticSecurityService staticSecurityService;
+    private final Cache<Class<?>, List<Property>> propertyCache;
     private final ObjectProvider<ConfigurableConversionService> conversionServices;
 
     @Override
     public void afterSingletonsInstantiated() {
         for (var conversionService : conversionServices) {
             conversionService.addConverter(new ClearanceConverter(staticSecurityService));
-            conversionService.addConverter(new ClearanceReverseConverter(conversionService));
+            conversionService.addConverter(new ClearanceReverseConverter(propertyCache, conversionService));
         }
     }
 

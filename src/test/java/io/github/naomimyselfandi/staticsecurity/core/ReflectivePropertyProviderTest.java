@@ -1,5 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.PropertyProvider;
 import io.github.naomimyselfandi.staticsecurity.Unwrap;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,7 +13,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
 
-import java.lang.reflect.Method;
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -51,7 +53,8 @@ class ReflectivePropertyProviderTest {
     @Mock
     private UnwrappedValue unwrappedValue;
 
-    private Method property, absentProperty;
+    @Mock
+    private Property property, absentProperty, sourceProperty;
 
     @Mock
     private ConversionService conversionService;
@@ -63,18 +66,24 @@ class ReflectivePropertyProviderTest {
 
     @BeforeEach
     void setup() throws NoSuchMethodException {
-        interface Holder {
-            Something getSomething();
-            boolean isSomewhere();
-        }
-        property = Holder.class.getMethod("getSomething");
-        absentProperty = Holder.class.getMethod("isSomewhere");
-        fixture = new ReflectivePropertyProvider<>(Source.class, conversionService, propertyProviderCache);
+        var name1 = UUID.randomUUID().toString();
+        var name2 = UUID.randomUUID().toString();
+        when(sourceProperty.name()).thenReturn(name1);
+        fixture = new ReflectivePropertyProvider<>(
+                Source.class,
+                List.of(sourceProperty),
+                conversionService,
+                propertyProviderCache);
+        lenient().when(property.name()).thenReturn(name1);
+        lenient().when(absentProperty.name()).thenReturn(name2);
+        lenient().when(property.type()).thenReturn(Something.TYPE);
+        lenient().when(sourceProperty.type()).thenReturn(SomethingElse.TYPE);
         lenient().doReturn(delegate).when(propertyProviderCache).get(UnwrappedValue.class);
     }
 
     @Test
-    void extract() {
+    void extract() throws NoSuchMethodException {
+        when(sourceProperty.method()).thenReturn(Source.class.getMethod("something"));
         when(source.something()).thenReturn(somethingElse);
         when(conversionService.canConvert(SomethingElse.TYPE, Something.TYPE)).thenReturn(true);
         when(conversionService.convert(somethingElse, SomethingElse.TYPE, Something.TYPE)).thenReturn(something);
@@ -82,7 +91,8 @@ class ReflectivePropertyProviderTest {
     }
 
     @Test
-    void extract_WhenTheValueIsNull_ThenNull() {
+    void extract_WhenTheValueIsNull_ThenNull() throws NoSuchMethodException {
+        when(sourceProperty.method()).thenReturn(Source.class.getMethod("something"));
         when(source.something()).thenReturn(null);
         when(conversionService.canConvert(SomethingElse.TYPE, Something.TYPE)).thenReturn(true);
         assertThat(fixture.extract(source, property)).isNull();

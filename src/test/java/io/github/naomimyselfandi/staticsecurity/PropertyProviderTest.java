@@ -2,12 +2,10 @@ package io.github.naomimyselfandi.staticsecurity;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -17,32 +15,28 @@ class PropertyProviderTest {
     private static class TestProvider<S> implements PropertyProvider<S> {
 
         @Override
-        public @Nullable Object extract(@NotNull S source, @NotNull Method property) {
+        public @Nullable Object extract(@NotNull S source, @NotNull Property property) {
             return fail();
         }
 
         @Override
-        public @Nullable Object flatten(@NotNull S source, @NotNull Method property) {
+        public @Nullable Object flatten(@NotNull S source, @NotNull Property property) {
             return fail();
         }
 
     }
 
-    private Method method;
-
-    @BeforeEach
-    void setup() throws NoSuchMethodException {
-        method = PropertyProviderTest.class.getDeclaredMethod("setup");
-    }
+    @Mock
+    private Property property;
 
     @Test
     void canExtract() {
-        assertThat(new TestProvider<>().canExtract(method)).isTrue();
+        assertThat(new TestProvider<>().canExtract(property)).isTrue();
     }
 
     @Test
     void canFlatten() {
-        assertThat(new TestProvider<>().canFlatten(method)).isTrue();
+        assertThat(new TestProvider<>().canFlatten(property)).isTrue();
     }
 
     @Test

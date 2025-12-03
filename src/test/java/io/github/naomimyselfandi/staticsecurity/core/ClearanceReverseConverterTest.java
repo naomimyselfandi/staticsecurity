@@ -1,6 +1,9 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
 import io.github.naomimyselfandi.staticsecurity.Clearance;
+import io.github.naomimyselfandi.staticsecurity.Property;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.RepetitionInfo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,7 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
 
-import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -26,25 +29,28 @@ class ClearanceReverseConverterTest {
         TypeDescriptor TYPE = TypeDescriptor.valueOf(Bar.class);
     }
 
-    private interface SimpleClearance extends Clearance {
+    private interface TestClearance extends Clearance {
 
-        TypeDescriptor TYPE = TypeDescriptor.valueOf(SimpleClearance.class);
+        TypeDescriptor TYPE = TypeDescriptor.valueOf(TestClearance.class);
 
-        Foo requiredProperty();
-
-        @SuppressWarnings("unused")
-        Optional<Object> optionalProperty();
+        Foo foo();
 
     }
 
     @Mock
-    private SimpleClearance clearance;
+    private TestClearance clearance;
 
     @Mock
     private Foo foo;
 
     @Mock
     private Bar bar;
+
+    @Mock
+    private Property property, anotherProperty;
+
+    @Mock
+    private Cache<Class<?>, List<Property>> propertyCache;
 
     @Mock
     private ConversionService conversionService;
@@ -60,34 +66,44 @@ class ClearanceReverseConverterTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void matches(boolean canConvert) {
+        when(propertyCache.get(TestClearance.class)).thenReturn(List.of(property, anotherProperty));
+        when(property.required()).thenReturn(true);
+        when(property.type()).thenReturn(Foo.TYPE);
+        when(anotherProperty.required()).thenReturn(false);
         when(conversionService.canConvert(Foo.TYPE, Bar.TYPE)).thenReturn(canConvert);
-        assertThat(fixture.matches(SimpleClearance.TYPE, Bar.TYPE)).isEqualTo(canConvert);
+        assertThat(fixture.matches(TestClearance.TYPE, Bar.TYPE)).isEqualTo(canConvert);
     }
 
     @Test
     void matches_WhenTheSourceTypeIsNotAClearanceType_ThenFalse() {
-        interface NotAClearanceType {
-            @SuppressWarnings("unused") Object requiredProperty();
-        }
+        interface NotAClearanceType {}
         assertThat(fixture.matches(TypeDescriptor.valueOf(NotAClearanceType.class), Bar.TYPE)).isFalse();
-        verifyNoInteractions(conversionService);
+        verifyNoInteractions(propertyCache, conversionService);
     }
 
     @Test
     void matches_WhenTheSourceTypeIsNotASimpleClearanceType_ThenFalse() {
-        interface ComplexClearance{
-            @SuppressWarnings("unused") Object requiredProperty1();
-            @SuppressWarnings("unused") Object requiredProperty2();
-        }
-        assertThat(fixture.matches(TypeDescriptor.valueOf(ComplexClearance.class), Bar.TYPE)).isFalse();
+        when(propertyCache.get(TestClearance.class)).thenReturn(List.of(property, anotherProperty));
+        when(property.required()).thenReturn(true);
+        when(anotherProperty.required()).thenReturn(true);
+        assertThat(fixture.matches(TypeDescriptor.valueOf(TestClearance.class), Bar.TYPE)).isFalse();
         verifyNoInteractions(conversionService);
     }
 
-    @Test
-    void convert() {
-        when(clearance.requiredProperty()).thenReturn(foo);
+    @RepeatedTest(2)
+    void convert(RepetitionInfo repetitionInfo) throws NoSuchMethodException {
+        if (repetitionInfo.getCurrentRepetition() == 1) {
+            when(propertyCache.get(TestClearance.class)).thenReturn(List.of(property));
+        } else {
+            when(propertyCache.get(TestClearance.class)).thenReturn(List.of(property, anotherProperty));
+            when(anotherProperty.required()).thenReturn(false);
+        }
+        when(property.required()).thenReturn(true);
+        when(property.type()).thenReturn(Foo.TYPE);
+        when(property.method()).thenReturn(TestClearance.class.getMethod("foo"));
+        when(clearance.foo()).thenReturn(foo);
         when(conversionService.convert(foo, Foo.TYPE, Bar.TYPE)).thenReturn(bar);
-        assertThat(fixture.convert(clearance, SimpleClearance.TYPE, Bar.TYPE)).isEqualTo(bar);
+        assertThat(fixture.convert(clearance, TestClearance.TYPE, Bar.TYPE)).isEqualTo(bar);
     }
 
 }

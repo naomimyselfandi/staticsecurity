@@ -1,5 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.PropertyProvider;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.stereotype.Component;
@@ -13,10 +14,16 @@ import java.util.stream.Stream;
 @Component
 class PropertyProviderCache extends Cache<Class<?>, PropertyProvider<?>> {
 
+    private final Cache<Class<?>, List<Property>> propertyCache;
     private final List<PropertyProvider<?>> propertyProviders;
     private final ConversionService conversionService;
 
-    PropertyProviderCache(List<? extends PropertyProvider<?>> propertyProviders, ConversionService conversionService) {
+    PropertyProviderCache(
+            Cache<Class<?>, List<Property>> propertyCache,
+            List<? extends PropertyProvider<?>> propertyProviders,
+            ConversionService conversionService
+    ) {
+        this.propertyCache = propertyCache;
         this.propertyProviders = propertyProviders
                 .stream()
                 .sorted(Comparator.comparing(it -> -depth(it.getSourceType())))
@@ -30,7 +37,12 @@ class PropertyProviderCache extends Cache<Class<?>, PropertyProvider<?>> {
                 .stream()
                 .filter(it -> it.getSourceType().isAssignableFrom(input))
                 .findFirst()
-                .orElseGet(() -> new ReflectivePropertyProvider<>(input, conversionService, this));
+                .orElseGet(() -> makeReflectiveProvider(input));
+    }
+
+    private ReflectivePropertyProvider<?> makeReflectiveProvider(Class<?> type) {
+        var properties = propertyCache.calculate(type);
+        return new ReflectivePropertyProvider<>(type, properties, conversionService, this);
     }
 
     private static int depth(Class<?> type) {

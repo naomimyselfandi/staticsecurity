@@ -1,6 +1,6 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
-import io.github.naomimyselfandi.staticsecurity.MethodInfo;
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.PropertyProvider;
 import io.github.naomimyselfandi.staticsecurity.Unwrap;
 import lombok.Getter;
@@ -19,43 +19,44 @@ import java.util.stream.Collectors;
 
 class ReflectivePropertyProvider<T> implements PropertyProvider<T> {
 
-    private final Map<String, Method> sourceProperties;
-
     private final List<Method> unwrappedMethods;
+    private final TypeDescriptor sourceTypeDescriptor;
 
     @Getter(onMethod_ = @Override)
     private final Class<T> sourceType;
-    private final ConversionService conversionService;
-    private final Cache<Class<?>, PropertyProvider<?>> propertyProviderCache;
+
+    final Map<String, Property> properties;
+    final ConversionService conversionService;
+    final Cache<Class<?>, PropertyProvider<?>> propertyProviderCache;
 
     ReflectivePropertyProvider(
             Class<T> sourceType,
+            List<Property> properties,
             ConversionService conversionService,
             Cache<Class<?>, PropertyProvider<?>> propertyProviderCache
     ) {
-        this.sourceProperties = MethodInfo
-                .getProperties(sourceType)
-                .stream()
-                .peek(ReflectionUtils::makeAccessible)
-                .collect(Collectors.toUnmodifiableMap(MethodInfo::getName, Function.identity()));
         this.unwrappedMethods = Arrays
                 .stream(sourceType.getMethods())
                 .filter(it -> it.isAnnotationPresent(Unwrap.class))
                 .sorted(Comparator.comparing(Method::getName))
                 .toList();
+        this.sourceTypeDescriptor = TypeDescriptor.valueOf(sourceType);
         this.sourceType = sourceType;
+        this.properties = keyByName(properties);
         this.conversionService = conversionService;
         this.propertyProviderCache = propertyProviderCache;
     }
 
     @Override
-    public @Nullable Object extract(T source, Method property) {
-        var sourceProperty = sourceProperties.get(MethodInfo.getName(property));
+    public @Nullable Object extract(T source, Property property) {
+        var sourceProperty = properties.get(property.name());
         if (sourceProperty != null) {
-            var sourceType = MethodInfo.getType(sourceProperty);
-            var targetType = MethodInfo.getType(property);
+            var sourceType = sourceProperty.type();
+            var targetType = property.type();
             if (conversionService.canConvert(sourceType, targetType)) {
-                var sourceValue = ReflectionUtils.invokeMethod(sourceProperty, source);
+                var method = sourceProperty.method();
+                ReflectionUtils.makeAccessible(method);
+                var sourceValue = ReflectionUtils.invokeMethod(method, source);
                 if (sourceValue != null) {
                     return conversionService.convert(sourceValue, sourceType, targetType);
                 }
@@ -77,16 +78,16 @@ class ReflectivePropertyProvider<T> implements PropertyProvider<T> {
     }
 
     @Override
-    public @Nullable Object flatten(T source, Method property) {
-        return conversionService.convert(source, MethodInfo.getType(property));
+    public @Nullable Object flatten(T source, Property property) {
+        return conversionService.convert(source, property.type());
     }
 
     @Override
-    public boolean canExtract(Method property) {
-        var sourceProperty = sourceProperties.get(MethodInfo.getName(property));
+    public boolean canExtract(Property property) {
+        var sourceProperty = properties.get(property.name());
         if (sourceProperty != null) {
-            var sourceType = MethodInfo.getType(sourceProperty);
-            var targetType = MethodInfo.getType(property);
+            var sourceType = sourceProperty.type();
+            var targetType = property.type();
             return conversionService.canConvert(sourceType, targetType);
         } else {
             return unwrappedMethods
@@ -98,8 +99,12 @@ class ReflectivePropertyProvider<T> implements PropertyProvider<T> {
     }
 
     @Override
-    public boolean canFlatten(Method property) {
-        return conversionService.canConvert(TypeDescriptor.valueOf(sourceType), MethodInfo.getType(property));
+    public boolean canFlatten(Property property) {
+        return conversionService.canConvert(sourceTypeDescriptor, property.type());
+    }
+
+    private static Map<String, Property> keyByName(List<Property> properties) {
+        return properties.stream().collect(Collectors.toUnmodifiableMap(Property::name, Function.identity()));
     }
 
 }

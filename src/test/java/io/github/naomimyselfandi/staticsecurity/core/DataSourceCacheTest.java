@@ -1,20 +1,17 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
 import io.github.naomimyselfandi.staticsecurity.Clearance;
-import io.github.naomimyselfandi.staticsecurity.MethodInfo;
+import io.github.naomimyselfandi.staticsecurity.Property;
 import io.github.naomimyselfandi.staticsecurity.PropertyProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.RepetitionInfo;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.lang.reflect.Method;
+import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.*;
@@ -25,54 +22,48 @@ class DataSourceCacheTest {
 
     private interface Source {}
 
-    private interface Foo {}
-    private interface Bar {}
-    private interface Baz {}
+    private interface TestClearance extends Clearance {}
 
-    private interface TestClearance extends Clearance {
-
-        Foo getFoo();
-
-        Bar getBar();
-
-        default Baz getBaz() {
-            return fail();
-        }
-
-    }
-
-    private interface TestSimpleClearance extends TestClearance {
-
-        @Override
-        default Bar getBar() {
-            return fail();
-        }
-
-    }
+    @Mock
+    private Property property1, property2;
 
     @Mock
     private PropertyProvider<Source> provider;
 
     @Mock
+    private Cache<Class<?>, List<Property>> propertyCache;
+
+    @Mock
     private Cache<Class<?>, PropertyProvider<?>> propertyProviderCache;
 
-    @InjectMocks
     private DataSourceCache fixture;
 
     @BeforeEach
     void setup() {
-        when((Object) propertyProviderCache.get(Source.class)).thenReturn(provider);
+        doReturn(provider).when(propertyProviderCache).get(Source.class);
+        when(propertyCache.get(TestClearance.class)).thenReturn(List.of(property1, property2));
+        lenient().when(property1.name()).thenReturn(UUID.randomUUID().toString());
+        lenient().when(property2.name()).thenReturn(UUID.randomUUID().toString());
+        fixture = new DataSourceCache(propertyCache, propertyProviderCache);
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    void calculate_Extract(boolean optionalPropertyIsAvailable) {
-        when(provider.canExtract(any())).then(invocation -> {
-            var method = invocation.<Method>getArgument(0);
-            return method.getReturnType() != Baz.class || optionalPropertyIsAvailable;
-        });
-        lenient().when(provider.canFlatten(any())).thenReturn(true); // not used b/c multiple required properties
-        var expected = new ExtractingDataSource<>(provider, MethodInfo.getProperties(TestClearance.class));
+    @RepeatedTest(6)
+    void calculate_Extract(RepetitionInfo repetitionInfo) {
+        Property p1, p2;
+        var repetition = repetitionInfo.getCurrentRepetition() - 1;
+        if ((repetition & 1) == 1) {
+            p1 = property1;
+            p2 = property2;
+        } else {
+            p1 = property2;
+            p2 = property1;
+        }
+        when(p1.required()).thenReturn(true);
+        when(p2.required()).thenReturn(repetition >= 2);
+        when(provider.canExtract(p1)).thenReturn(true);
+        lenient().when(provider.canExtract(p1)).thenReturn(true);
+        lenient().when(provider.canExtract(p2)).thenReturn(repetition >= 2);
+        var expected = new ExtractingDataSource<>(provider, List.of(property1, property2));
         assertThat(fixture.calculate(new DataSourceKey(Source.class, TestClearance.class)))
                 .map(Function.<Object>identity())
                 .contains(expected);
@@ -80,56 +71,60 @@ class DataSourceCacheTest {
 
     @RepeatedTest(2)
     void calculate_Extract_WhenARequiredPropertyIsUnavailable_ThenReturnsNothing(RepetitionInfo repetitionInfo) {
-        when(provider.canExtract(any())).then(invocation -> {
-            var method = invocation.<Method>getArgument(0);
-            if (method.getReturnType() == Foo.class) {
-                return repetitionInfo.getCurrentRepetition() == 1;
-            } else if (method.getReturnType() == Bar.class) {
-                return repetitionInfo.getCurrentRepetition() == 2;
-            } else {
-                return true;
-            }
-        });
+        if (repetitionInfo.getCurrentRepetition() == 1) {
+            lenient().when(property1.required()).thenReturn(true);
+            lenient().when(property2.required()).thenReturn(false);
+            lenient().when(provider.canExtract(property1)).thenReturn(false);
+            lenient().when(provider.canExtract(property2)).thenReturn(true);
+        } else {
+            lenient().when(property1.required()).thenReturn(false);
+            lenient().when(property2.required()).thenReturn(true);
+            lenient().when(provider.canExtract(property1)).thenReturn(true);
+            lenient().when(provider.canExtract(property2)).thenReturn(false);
+        }
         assertThat(fixture.calculate(new DataSourceKey(Source.class, TestClearance.class))).isEmpty();
     }
 
     @RepeatedTest(4)
-    void calculate_Flatten(RepetitionInfo repetitionInfo) throws NoSuchMethodException {
-        when(provider.canFlatten(any())).then(invocation -> {
-            var method = invocation.<Method>getArgument(0);
-            if (method.getReturnType() == Bar.class) {
-                return ((repetitionInfo.getCurrentRepetition() - 1) & 1) == 1;
-            } else if (method.getReturnType() == Baz.class) {
-                return ((repetitionInfo.getCurrentRepetition() - 1) & 2) == 2;
-            } else {
-                return true;
-            }
-        });
-        var property = TestSimpleClearance.class.getMethod("getFoo");
-        var expected = new FlatteningDataSource<>(provider, property);
-        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestSimpleClearance.class)))
+    void calculate_Flatten(RepetitionInfo repetitionInfo) {
+        var repetition = repetitionInfo.getCurrentRepetition() - 1;
+        var requiredProperty = ((repetition & 1) == 1) ? property1 : property2;
+        var optionalProperty = ((repetition & 1) != 1) ? property1 : property2;
+        when(requiredProperty.required()).thenReturn(true);
+        when(optionalProperty.required()).thenReturn(false);
+        when(provider.canFlatten(requiredProperty)).thenReturn(true);
+        lenient().when(provider.canFlatten(optionalProperty)).thenReturn(repetition > 2);
+        var expected = new FlatteningDataSource<>(provider, requiredProperty);
+        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestClearance.class)))
                 .map(Function.<Object>identity())
                 .contains(expected);
     }
 
-    @Test
-    void calculate_Flatten_WhenThePropertyIsUnavailable_ThenDoesNotCreateAnExtractor() {
-        when(provider.canFlatten(any())).then(invocation -> {
-            var method = invocation.<Method>getArgument(0);
-            return method.getReturnType() != Foo.class;
-        });
-        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestSimpleClearance.class))).isEmpty();
+    @RepeatedTest(4)
+    void calculate_Flatten_WhenThePropertyIsUnavailable_ThenDoesNotCreateAnExtractor(RepetitionInfo repetitionInfo) {
+        var repetition = repetitionInfo.getCurrentRepetition() - 1;
+        var requiredProperty = ((repetition & 1) == 1) ? property1 : property2;
+        var optionalProperty = ((repetition & 1) != 1) ? property1 : property2;
+        when(requiredProperty.required()).thenReturn(true);
+        when(optionalProperty.required()).thenReturn(false);
+        when(provider.canFlatten(requiredProperty)).thenReturn(false);
+        lenient().when(provider.canFlatten(optionalProperty)).thenReturn(repetition > 2);
+        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestClearance.class))).isEmpty();
     }
 
-    @Test
-    void calculate_Pair() throws NoSuchMethodException {
+    @RepeatedTest(2)
+    void calculate_Pair(RepetitionInfo repetitionInfo) {
+        var requiredProperty = (repetitionInfo.getCurrentRepetition() == 1) ? property1 : property2;
+        var optionalProperty = (repetitionInfo.getCurrentRepetition() == 1) ? property2 : property1;
+        when(requiredProperty.required()).thenReturn(true);
+        when(optionalProperty.required()).thenReturn(false);
         when(provider.canExtract(any())).thenReturn(true);
         when(provider.canFlatten(any())).thenReturn(true);
         var expected = new DataSourcePair<>(
-                new ExtractingDataSource<>(provider, MethodInfo.getProperties(TestSimpleClearance.class)),
-                new FlatteningDataSource<>(provider, TestSimpleClearance.class.getMethod("getFoo"))
+                new ExtractingDataSource<>(provider, List.of(property1, property2)),
+                new FlatteningDataSource<>(provider, requiredProperty)
         );
-        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestSimpleClearance.class)))
+        assertThat(fixture.calculate(new DataSourceKey(Source.class, TestClearance.class)))
                 .map(Function.<Object>identity())
                 .contains(expected);
     }

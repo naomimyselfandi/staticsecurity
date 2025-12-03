@@ -1,12 +1,14 @@
 package io.github.naomimyselfandi.staticsecurity.core;
 
-import io.github.naomimyselfandi.staticsecurity.MethodInfo;
+import io.github.naomimyselfandi.staticsecurity.Clearance;
 import org.springframework.core.ResolvableType;
 import org.springframework.security.core.Authentication;
+import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 class ClearanceInvocationHandler implements InvocationHandler {
@@ -17,6 +19,23 @@ class ClearanceInvocationHandler implements InvocationHandler {
             OptionalLong.class, OptionalLong.empty(),
             OptionalDouble.class, OptionalDouble.empty()
     );
+    private static final Pattern RESERVED = Pattern.compile("__.*__");
+    private static final Pattern NORMALIZER = Pattern.compile("(?:get|is)([A-Z])(.*)");
+    private static final Set<String> NOT_PROPERTIES = Set.of("hashCode", "toString", "getClass", "clone");
+
+    static String name(Method method) {
+        var name = method.getName();
+        var matcher = NORMALIZER.matcher(name);
+        return matcher.matches() ? (matcher.group(1).toLowerCase() + matcher.group(2)) : name;
+    }
+
+    static boolean isProperty(Method method) {
+        return (method.getParameterCount() == 0)
+                && (method.getReturnType() != void.class)
+                && !NOT_PROPERTIES.contains(method.getName())
+                && !RESERVED.matcher(method.getName()).matches()
+                && !method.isAnnotationPresent(Clearance.Helper.class);
+    }
 
     private record Pair(Method method, List<Object> args) {}
 
@@ -41,18 +60,27 @@ class ClearanceInvocationHandler implements InvocationHandler {
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        var role = MethodRole.of(method);
-        return switch (role) {
-            case EQUALS -> proxy == args[0];
-            case HASH_CODE -> System.identityHashCode(proxy);
-            case TO_STRING -> invokeToString();
-            case REQUIRED, OPTIONAL -> invokeProperty(proxy, method, args);
-            case AUTH -> auth;
-            case DATA -> data;
-            case DIRECT_HELPER -> invokeDefault(proxy, method, args);
-            case CACHED_HELPER -> invokeCached(proxy, method, args);
-            case SPRING_HELPER -> beanCache.get(MethodInfo.getResolvableType(method));
-        };
+        if (ReflectionUtils.isEqualsMethod(method)) {
+            return proxy == args[0];
+        } else if (ReflectionUtils.isHashCodeMethod(method)) {
+            return System.identityHashCode(proxy);
+        } else if (ReflectionUtils.isToStringMethod(method)) {
+            return invokeToString();
+        } else if (isProperty(method)) {
+            return invokeProperty(proxy, method, args);
+        } else if ("__auth__".equals(method.getName()) && method.getParameterCount() == 0) {
+            return auth;
+        } else if ("__data__".equals(method.getName()) && method.getParameterCount() == 0) {
+            return data;
+        } else if (method.isAnnotationPresent(Clearance.Helper.class)) {
+            return switch (method.getAnnotation(Clearance.Helper.class).value()) {
+                case DIRECT -> InvocationHandler.invokeDefault(proxy, method, args);
+                case CACHED -> invokeCachedHelper(proxy, method, args);
+                case SPRING -> beanCache.get(ResolvableType.forMethodReturnType(method));
+            };
+        } else {
+            throw new IllegalStateException("Unsupported method %s.".formatted(method));
+        }
     }
 
     private String invokeToString() {
@@ -61,26 +89,24 @@ class ClearanceInvocationHandler implements InvocationHandler {
     }
 
     private Object invokeProperty(Object proxy, Method method, Object[] args) throws Throwable {
-        var value = data.get(MethodInfo.getName(method));
-        return value != null ? value : invokeDefault(proxy, method, args);
-    }
-
-    private Object invokeCached(Object proxy, Method method, Object[] args) throws Throwable {
-        var key = method.getParameterCount() == 0 ? method : new Pair(method, Arrays.asList(args.clone()));
-        var value = cache.get(key);
-        if (value == null) {
-            value = invokeDefault(proxy, method, args);
-            cache.put(key, value);
-        }
-        return value;
-    }
-
-    private Object invokeDefault(Object proxy, Method method, Object[] args) throws Throwable {
-        if (method.isDefault()) {
+        var value = data.get(name(method));
+        if (value != null) {
+            return value;
+        } else if (method.isDefault()) {
             return InvocationHandler.invokeDefault(proxy, method, args);
         } else {
             return DEFAULTS.get(method.getReturnType());
         }
+    }
+
+    private Object invokeCachedHelper(Object proxy, Method method, Object[] args) throws Throwable {
+        var key = method.getParameterCount() == 0 ? method : new Pair(method, Arrays.asList(args.clone()));
+        var value = cache.get(key);
+        if (value == null) {
+            value = InvocationHandler.invokeDefault(proxy, method, args);
+            cache.put(key, value);
+        }
+        return value;
     }
 
 }

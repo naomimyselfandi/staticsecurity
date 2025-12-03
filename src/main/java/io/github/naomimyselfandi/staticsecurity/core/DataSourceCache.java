@@ -4,7 +4,7 @@ import io.github.naomimyselfandi.staticsecurity.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 class DataSourceCache extends Cache<DataSourceKey, Optional<? extends DataSource<?>>> {
 
+    private final Cache<Class<?>, List<Property>> propertyCache;
     private final Cache<Class<?>, PropertyProvider<?>> propertyProviderCache;
 
     @Override
@@ -23,8 +24,8 @@ class DataSourceCache extends Cache<DataSourceKey, Optional<? extends DataSource
         @SuppressWarnings("unchecked")
         var provider = (PropertyProvider<S>) propertyProviderCache.get(source);
         var result = Stream.<DataSource<S>>builder();
-        var properties = MethodInfo.getProperties(type);
-        var requiredProperties = properties.stream().filter(DataSourceCache::isRequired).toList();
+        var properties = propertyCache.get(type);
+        var requiredProperties = properties.stream().filter(Property::required).toList();
         if (requiredProperties.stream().allMatch(provider::canExtract)) {
             result.add(new ExtractingDataSource<>(provider, properties));
         }
@@ -32,10 +33,6 @@ class DataSourceCache extends Cache<DataSourceKey, Optional<? extends DataSource
             result.add(new FlatteningDataSource<>(provider, requiredProperties.get(0)));
         }
         return result.build().reduce(DataSourcePair::new);
-    }
-
-    private static boolean isRequired(Method property) {
-        return MethodRole.of(property) == MethodRole.REQUIRED;
     }
 
 }
